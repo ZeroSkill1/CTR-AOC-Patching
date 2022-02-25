@@ -1,0 +1,9 @@
+.elf
+.3dsx
+.smdh
+*/build/*
+*/lib/*
+.vscode/*
+*.3dsx
+*.elf
+*.smdh
