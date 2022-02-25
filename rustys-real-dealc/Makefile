@@ -37,9 +37,9 @@ include $(DEVKITARM)/3ds_rules
 #---------------------------------------------------------------------------------
 TARGET		:=	$(notdir $(CURDIR))
 BUILD		:=	build
-SOURCES		:=	source ../patcher_lib/source
+SOURCES		:=	source ../libpatchaoc/source
 DATA		:=	data
-INCLUDES	:=	include ../patcher_lib/include
+INCLUDES	:=	include ../libpatchaoc/include
 GRAPHICS	:=	gfx
 GFXBUILD	:=	$(BUILD)
 #ROMFS		:=	romfs
