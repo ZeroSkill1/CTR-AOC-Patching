@@ -43,6 +43,7 @@ int main(int argc, char* argv[])
 				"you can visit the shop and purchase minigames.\n\n");
 			break;
 		case (Result)0xC8804478:
+		case (Result)0xC8A04555:
 			printf(
 				"ERROR: Save data not found. Please make\n"
 				"sure that you have played up to the point where\n"
