@@ -13,6 +13,7 @@ namespace DLC
 	private:
 		bool IsSave;
 		bool IsClosed;
+		bool IsMinecraft;
 
 		FS_Archive Archive;
 
@@ -22,7 +23,7 @@ namespace DLC
 		Result OpenSaveDataArchive(u32 unique_id);
 
 	public:
-		SaveData(u32 unique_id, bool is_save = false);
+		SaveData(u32 unique_id, bool is_save = false, bool is_mc = false);
 		~SaveData();
 
 		Result CurrentResult;

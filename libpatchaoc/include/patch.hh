@@ -2,6 +2,7 @@
 #define __patch_hh__
 
 #include <customresult.hh>
+#include <cstdarg>
 #include <cstring>
 #include <stdio.h>
 #include <save.hh>
@@ -53,6 +54,7 @@ namespace DLC
 			{ 0x1B8700, (PatchTitleFlags)( (int)PatchTitleFlags::HasUpdate | (int)PatchTitleFlags::HasDLC | (int)PatchTitleFlags::IsKTROnly | (int)PatchTitleFlags::UsesExtData ), 16, 48, 9408, PatchTitleRegion::USA },
 		};
 
+		Result PatchSingle(const DLC::PatchTitle& title);
 		Result Patch();
 	}
 
@@ -65,6 +67,7 @@ namespace DLC
 			{ 0x0D2900, (PatchTitleFlags)( (int)PatchTitleFlags::HasDLC | (int)PatchTitleFlags::UsesSaveData ), 1056,  0, 0xFFFF, PatchTitleRegion::JPN },
 		};
 
+		Result PatchSingle(const DLC::PatchTitle& title);
 		Result Patch();
 	}
 

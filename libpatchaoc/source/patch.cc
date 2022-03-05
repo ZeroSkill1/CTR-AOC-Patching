@@ -78,6 +78,27 @@ static u32 crc32(u8 *buf, u32 len)
     return ~ret;
 }
 
+static std::string stringprintf(const char *f, ...)
+{
+	va_list va;
+	va_start(va, f);
+
+	va_list cpy;
+	va_copy(cpy, va);
+
+	int len = vsnprintf(NULL, 0, f, cpy);
+	char *charbuf = (char *)malloc(len + 1);
+
+	vsnprintf(charbuf, len + 1, f, va);
+	va_end(va);
+	va_end(cpy);
+
+	std::string out_str(charbuf);
+
+	free(charbuf);
+	return out_str;
+}
+
 Result DLC::TitleExists(const DLC::PatchTitle &title)
 {
 	u64 title_ids[3] =
@@ -105,7 +126,7 @@ Result DLC::TitleExists(const DLC::PatchTitle &title)
 	if ((title_entries[0].version != title.TitleVersion) || (uses_dlc && title_entries[1].version != title.DLCTitleVersion) || (uses_update && title_entries[2].version != title.UpdateTitleVersion))
 		return TITLE_VERSION_MISMATCH;
 
-	DLC::SaveData savedata(title.UniqueID, (bool)((int)title.Flags & (int)PatchTitleFlags::UsesSaveData));
+	DLC::SaveData savedata(title.UniqueID, (int)title.Flags & (int)PatchTitleFlags::UsesSaveData ? true : false);
 
 	if (R_FAILED(savedata.CurrentResult) ||
 		R_FAILED(savedata.Close(true)))
@@ -138,6 +159,57 @@ Result DLC::TitlesExist(const PatchTitle *titles, u32 *out, int count)
 	return 0;
 }
 
+Result DLC::RustysRealDealBaseball::PatchSingle(const DLC::PatchTitle& title)
+{
+	Result res;
+	u64 size;
+	u8 *buf;
+
+	DLC::SaveData savedata(title.UniqueID, true);
+
+	if (R_FAILED(savedata.CurrentResult))
+		return savedata.CurrentResult;
+
+	if (R_FAILED(savedata.ReadFileIntoBuffer(buf, "/save00.bin", &size)))
+	{
+		res = savedata.CurrentResult;
+		savedata.Close(true);
+		return res;
+	}
+
+	if (size != 7076)
+	{
+		res = savedata.CurrentResult;
+		savedata.Close(true);
+		return INVALID_SAVE_SIZE;
+	}
+
+	for (u32 i = 0; i < 10; i++)
+	{
+		buf[0x3E4 + i] = i;
+	}
+
+	memset(buf + 0x3EE, 0x01, 10);
+	*((u32 *)(buf + size - 4)) = crc32(buf, size - 4);
+
+	if (R_FAILED(savedata.WriteFileFromBuffer(buf, "/save00.bin", (u32)size)))
+	{
+		res = savedata.CurrentResult;
+		savedata.Close(true);
+		return res;
+	}
+
+	if (R_FAILED(savedata.Close()))
+	{
+		delete [] buf;
+		return savedata.CurrentResult;
+	}
+
+	delete [] buf;
+
+	return 0;
+}
+
 Result DLC::RustysRealDealBaseball::Patch()
 {
 	Result res;
@@ -160,43 +232,168 @@ Result DLC::RustysRealDealBaseball::Patch()
 
 	for (const DLC::PatchTitle *&title : patch_titles)
 	{
-		DLC::SaveData savedata(title->UniqueID, true);
-
-		if (R_FAILED(savedata.CurrentResult))
-			return savedata.CurrentResult;
-
-		u8 *buf;
-		u64 size;
-
-		if (R_FAILED(savedata.ReadFileIntoBuffer(buf, "/save00.bin", &size)))
-		{
-			res = savedata.CurrentResult;
-			savedata.Close(true);
+		if (R_FAILED(res = DLC::RustysRealDealBaseball::PatchSingle(*title)))
 			return res;
-		}
+	}
 
-		for (u32 i = 0; i < 10; i++)
+	return 0;
+}
+
+static const char GetMcRegionChar(DLC::PatchTitleRegion region)
+{
+	switch (region)
+	{
+		case DLC::PatchTitleRegion::EUR:
+			return 'P';
+		case DLC::PatchTitleRegion::USA:
+			return 'E';
+		case DLC::PatchTitleRegion::JPN:
+			return 'J';
+		default:
+			return '\0';
+	}
+}
+
+Result DLC::Minecraft::PatchSingle(const DLC::PatchTitle& title)
+{
+	u64 save_size;
+	Result res;
+	u8 *buf;
+
+	DLC::SaveData savedata(title.UniqueID, false, true);
+
+	if (R_FAILED(savedata.CurrentResult))
+		return savedata.CurrentResult;
+
+	if (R_FAILED(savedata.ReadFileIntoBuffer(buf, "/options.txt", &save_size)))
+	{
+		res = savedata.CurrentResult;
+		savedata.Close();
+		return res;
+	}
+
+	/**
+	 * The DRM goes as follows: 
+	 * 1) Ensure the options.txt file is 128KiB
+	 * 2) Ensure the header = the amount of data in the file
+	 * 	excluding the header and trailing 0x00 (4 bytes)
+	 * 3) Ensure all purchased content is stored in the
+	 * 	purchased_items key in this format:
+	 * 	"${GAME_PROD_ID}${CONTENT_ID}"
+	 * 	All purchased content must be seperated with comma's
+	 * 4) The latest update must be installed, this contains
+	 * 	All the actual dlc content
+	 * 5) The dlc must actually be installed. Athough it doesn't contain data,
+	 * 	the game checks if it is installed
+	 * 
+	 * What we're doing here is just bruteforcing every content ID
+	 * from 0x00 - 0xFF because the game doesn't check for extra IDs
+	 **/
+	bool at_value = false;
+	std::string kbuf;
+	u32 ns = save_size;
+
+	u8 *out_buf = new u8[131072];
+
+	// Skip the header
+	for(u32 i = 4, wl = 4; i < save_size + 4; ++i, ++wl)
+	{
+		// :
+		if (buf[i] == 0x3a)
 		{
-			buf[0x3E4 + i] = i;
+			at_value = true;
+
+			char region_char = GetMcRegionChar(title.Region);
+
+			if (kbuf == "purchased_items")
+			{
+				std::string newk = stringprintf("CTRMBD3%c%08lX", region_char, 0x0);
+
+				for (u32 i = 0x1; i < 0xFF; ++i)
+				{
+					newk += stringprintf(",CTRMBD3%c%08lX", region_char, i);
+				}
+
+				// layout in ret is now
+				// :<..ids...>\n
+				// Layout in chars is now
+				// :<...old user ids... (0+)>\n
+				// Cut every old user id.
+				for (u32 j = 0; i < save_size + 3; ++i, ++j)
+				{
+					// 0x0a = \n
+					if (buf[i + 1] == 0x0a)
+					{
+						ns -= j;
+						break;
+					}
+				}
+
+				// 0x3a = :
+				out_buf[wl] = 0x3a;
+				for(size_t j = 0; j < newk.size(); ++j, ++wl)
+					out_buf[wl + 1] = newk[j];
+				ns += newk.size();
+
+				*((u32 *)out_buf) = ns;
+				continue;
+			}
+
+			kbuf.clear();
 		}
+		else if (buf[i] == 0x0a)
+			at_value = false;
+		else if (!at_value)
+			kbuf.push_back(buf[i]);
 
-		memset(buf + 0x3EE, 0x01, 10);
-		*((u32 *)(buf + size - 4)) = crc32(buf, size - 4);
+		out_buf[wl] = buf[i];
+	}
 
-		if (R_FAILED(savedata.WriteFileFromBuffer(buf, "/save00.bin", (u32)size)))
-		{
-			res = savedata.CurrentResult;
-			savedata.Close(true);
+	delete [] buf;
+
+	if (R_FAILED(savedata.WriteFileFromBuffer(out_buf, "/options.txt", ns)))
+	{
+		delete [] out_buf;
+		res = savedata.CurrentResult;
+		savedata.Close();
+		return res;
+	}
+
+	if (R_FAILED(savedata.Close()))
+	{
+		delete [] out_buf;
+		return savedata.CurrentResult;
+	}
+
+	delete [] out_buf;
+
+	return 0;
+}
+
+Result DLC::Minecraft::Patch()
+{
+	Result res;
+	u32 titles;
+	std::vector<const DLC::PatchTitle *> patch_titles;
+
+	if (R_FAILED(res = DLC::TitlesExist(DLC::Minecraft::Titles, &titles, 3)))
+		return res;
+	else if (titles == 0)
+		return TITLES_NOT_FOUND;
+
+	if (titles & 0x1) // JPN
+		patch_titles.push_back(&DLC::Minecraft::Titles[0]);
+
+	if (titles & 0x2) // EUR
+		patch_titles.push_back(&DLC::Minecraft::Titles[1]);
+
+	if (titles & 0x4) // USA
+		patch_titles.push_back(&DLC::Minecraft::Titles[2]);
+
+	for (const DLC::PatchTitle *&title : patch_titles)
+	{
+		if (R_FAILED(res = DLC::Minecraft::PatchSingle(*title)))
 			return res;
-		}
-
-		if (R_FAILED(savedata.Close()))
-		{
-			delete [] buf;
-			return savedata.CurrentResult;
-		}
-
-		delete [] buf;
 	}
 
 	return 0;

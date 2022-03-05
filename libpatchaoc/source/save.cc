@@ -12,12 +12,13 @@ Result DLC::SaveData::OpenSaveDataArchive(u32 unique_id)
 	return FSUSER_OpenArchive(&this->Archive, ARCHIVE_USER_SAVEDATA, { PATH_BINARY, 12, path });
 }
 
-DLC::SaveData::SaveData(u32 unique_id, bool is_save)
+DLC::SaveData::SaveData(u32 unique_id, bool is_save, bool is_mc)
 {
 	this->CurrentResult = (this->IsSave = is_save) ?
 		this->OpenSaveDataArchive(unique_id) :
-		this->OpenExtDataArchive(unique_id);
+		this->OpenExtDataArchive(unique_id >> 8);
 	this->IsClosed = false;
+	this->IsMinecraft = is_mc;
 }
 
 DLC::SaveData::~SaveData()
@@ -65,15 +66,77 @@ Result DLC::SaveData::ReadFileIntoBuffer(u8 *&out_buf, Handle file, u64 *out_siz
 		return FILE_NOT_FOUND;
 	
 	u64 size;
+	u8 *buf = nullptr;
 
-	if (R_FAILED(this->CurrentResult = FSFILE_GetSize(file, &size)))
-		return this->CurrentResult;
+	if (!this->IsMinecraft)
+	{
+		if (R_FAILED(this->CurrentResult = FSFILE_GetSize(file, &size)))
+		{
+			Result res = this->CurrentResult;
+			this->CloseFile(file);
+			return res;
+		}
 
-	u8 *buf = new u8[size];
-	u32 read;
+		buf = new u8[size];
 
-	if ((R_FAILED(this->CurrentResult = FSFILE_Read(file, &read, 0, buf, (u32)size))) ||
-		(close_file && R_FAILED(this->CloseFile(file))))
+		u32 cur_read;
+		u64 remaining = size;
+		u64 offset = 0;
+		u32 to_read = remaining > 0x1000 ? 0x1000 : remaining;
+
+		while (offset != size)
+		{
+			if (R_FAILED(this->CurrentResult = FSFILE_Read(file, &cur_read, offset, buf + (u32)offset, to_read)))
+			{
+				delete [] buf;
+				Result res = this->CurrentResult;
+				this->CloseFile(file);
+				return cur_read != to_read ? INCOMPLETE_IO : res;
+			}
+
+			remaining -= to_read;
+			offset += to_read;
+			to_read = remaining > 0x1000 ? 0x1000 : remaining;
+		}
+	}
+	else
+	{
+		// Minecraft: New Nintendo 3DS Edition works a bit differently.
+		// You have to read the first u32 in the data first. This is the amount of data *after* the header
+		// sizeof(u32) (which is 4) + data size (value of first u32) = max amount of data possible to read.
+		u32 total_size = 0;
+		u32 read;
+
+		if (R_FAILED(this->CurrentResult = FSFILE_Read(file, &read, 0, (void *)&total_size, sizeof(u32))))
+		{
+			Result res = this->CurrentResult;
+			this->CloseFile(file);
+			return read != sizeof(u32) ? INCOMPLETE_IO : res;
+		}
+
+		total_size += sizeof(u32);
+
+		// Total size should never be more than 128KiB.
+		if (total_size > 131072)
+		{
+			this->CloseFile(file);
+			return INVALID_SAVE_SIZE;
+		}
+
+		buf = new u8[total_size];
+
+		if (R_FAILED(this->CurrentResult = FSFILE_Read(file, &read, 0, buf, total_size)))
+		{
+			Result res = this->CurrentResult;
+			this->CloseFile(file);
+			delete [] buf;
+			return read != total_size ? INCOMPLETE_IO : res;
+		}
+
+		size = total_size;
+	}
+
+	if (close_file && R_FAILED(this->CloseFile(file)))
 	{
 		delete [] buf;
 		return this->CurrentResult;
@@ -106,13 +169,13 @@ Result DLC::SaveData::WriteFileFromBuffer(u8 *buf, Handle file, u32 size, bool c
 
 	u32 written;
 
-	if (R_FAILED(this->CurrentResult = FSFILE_SetSize(file, size)) ||
-		R_FAILED(this->CurrentResult = FSFILE_Write(file, &written, 0LL, buf, size, 0)) ||
+	if ((!this->IsMinecraft && R_FAILED(this->CurrentResult = FSFILE_SetSize(file, size))) ||
+		R_FAILED(this->CurrentResult = FSFILE_Write(file, &written, 0LL, buf, size, FS_WRITE_FLUSH)) ||
 		(close_file && R_FAILED(this->CurrentResult = this->CloseFile(file))))
 		return this->CurrentResult;
 
 	if (written != size)
-		return INCOMPLETE_WRITE;
+		return INCOMPLETE_IO;
 
 	return 0;
 }

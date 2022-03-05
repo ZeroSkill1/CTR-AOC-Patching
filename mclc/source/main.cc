@@ -9,17 +9,17 @@ int main(int argc, char* argv[])
 	consoleInit(GFX_TOP, NULL);
 
 	printf(
-		"              - Rusty's Real DeaLC -              \n"
+		"                     - MCLC -                     \n"
 		"  https://github.com/ZeroSkill1/CTR-AOC-Patching  \n\n");
 
 	printf("Patching...\n\n");
 
-	Result res = DLC::RustysRealDealBaseball::Patch();
+	Result res = DLC::Minecraft::Patch();
 
 	switch (res)
 	{
 		case 0:
-			printf("SUCCESS: All installed versions of\nRusty's Real Deal Baseball have been patched!\n\n");
+			printf("SUCCESS: All installed versions of\nMinecraft have been patched!\n\n");
 			break;
 		case TITLE_VERSION_MISMATCH:
 			printf(
