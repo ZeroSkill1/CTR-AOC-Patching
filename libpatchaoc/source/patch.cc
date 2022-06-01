@@ -184,12 +184,100 @@ Result DLC::RustysRealDealBaseball::PatchSingle(const DLC::PatchTitle& title)
 		return INVALID_SAVE_SIZE;
 	}
 
-	for (u32 i = 0; i < 10; i++)
-	{
-		buf[0x3E4 + i] = i;
-	}
+	// outfits                                ( page, row, column )
+	/*
+		D60 + 19D4 to 0     = t-shirt              -> 1, 1, 1
+		DB4 + 1A74 to 1     = rusty slugger jacket -> 1, 1, 2
+		D7C + 1A04 to 2     = business suit        -> 1, 1, 3
+	*/
 
+	buf[0xD60] = buf[0xDB4] = buf[0xD7C] = 1;
+	buf[0x19D4] = 0; // should be like that by default anyway
+	buf[0x1A74] = 1;
+	buf[0x1A04] = 2;
+
+	/*
+		D84 + 1A14 to 3     = farmer's outfit      -> 1, 2, 1
+		D8C + 1A24 to 4     = ninja suit           -> 1, 2, 2
+		D94 + 1A34 to 5     = space suit           -> 1, 2, 3
+	*/
+
+	buf[0xD84] = buf[0xD8C] = buf[0xD94] = 1;
+	buf[0x1A14] = 3;
+	buf[0x1A24] = 4;
+	buf[0x1A34] = 5;
+
+	/*
+		D9C + 1A44 to 6     = basic uniform        -> 1, 3, 1
+		DA4 + 1A54 to 7     = pinstripe uniform    -> 1, 3, 2
+		DAC + 1A64 to 8     = pro ump outfit       -> 1, 3, 3
+	*/
+
+	buf[0xD9C] = buf[0xDA4] = buf[0xDAC] = 1;
+	buf[0x1A44] = 6;
+	buf[0x1A54] = 7;
+	buf[0x1A64] = 8;
+
+	/*
+		D6C + 19E4 to 9     = sweat suit           -> 2, 1, 1
+		D74 + 19F4 to A     = tropical shirt       -> 2, 1, 2
+		D78 + 19FC to B     = school uniform       -> 2, 1, 3
+	*/
+
+	buf[0xD6C] = buf[0xD74] = buf[0xD78] = 1;
+	buf[0x19E4] = 9;
+	buf[0x19F4] = 0xA;
+	buf[0x19FC] = 0xB;
+
+	/*
+		D80 + 1A0C to C     = western outfit       -> 2, 2, 1
+		D88 + 1A1C to D     = kung-fu outfit       -> 2, 2, 2
+		D90 + 1A2C to E     = caveman suit         -> 2, 2, 3
+	*/
+
+	buf[0xD80] = buf[0xD88] = buf[0xD90] = 1;
+	buf[0x1A0C] = 0xC;
+	buf[0x1A1C] = 0xD;
+	buf[0x1A2C] = 0xE;
+
+	/*
+		D98 + 1A3C to F     = manager's jacket     -> 2, 3, 1
+		DA0 + 1A4C to 10    = road uniform         -> 2, 3, 2
+		DA8 + 1A5C to 11    = short uniform        -> 2, 3, 3
+	*/
+
+	buf[0xD98] = buf[0xDA0] = buf[0xDA8] = 1;
+	buf[0x1A3C] = 0xF;
+	buf[0x1A4C] = 0x10;
+	buf[0x1A5C] = 0x11;
+
+	/*
+		DB0 + 1A6C to 12    = martian outfit       -> 3, 1, 1
+		D68 + 19DC to 13    = workout set          -> 3, 1, 2
+		D70 + 19EC to 14    = football uniform     -> 3, 1, 3
+	*/
+
+	buf[0xDB0] = buf[0xD68] = buf[0xD70] = 1;
+	buf[0x1A6C] = 0x12;
+	buf[0x19DC] = 0x13;
+	buf[0x19EC] = 0x14;
+
+	// fully advance story.
+	buf[0x19D2] = 0x06;
+
+	// // enable dog being your accomplice again.
+	// buf[0x45A] = 0xFF;
+	// ^ i'm not gonna add this yet; it seems keeping this on will trigger the message again and i'm not sure if that's intended behavior
+	// maybe this is random?
+
+	// enable games.
+	for (u32 i = 0; i < 10; i++)
+		buf[0x3E4 + i] = i;
+
+	// required for enabling games.
 	memset(buf + 0x3EE, 0x01, 10);
+
+	// recalculate crc32 checksum.
 	*((u32 *)(buf + size - 4)) = crc32(buf, size - 4);
 
 	if (R_FAILED(savedata.WriteFileFromBuffer(buf, "/save00.bin", (u32)size)))
@@ -231,10 +319,8 @@ Result DLC::RustysRealDealBaseball::Patch()
 		patch_titles.push_back(&DLC::RustysRealDealBaseball::Titles[2]);
 
 	for (const DLC::PatchTitle *&title : patch_titles)
-	{
 		if (R_FAILED(res = DLC::RustysRealDealBaseball::PatchSingle(*title)))
 			return res;
-	}
 
 	return 0;
 }
@@ -275,20 +361,14 @@ Result DLC::Minecraft::PatchSingle(const DLC::PatchTitle& title)
 	/**
 	 * The DRM goes as follows: 
 	 * 1) Ensure the options.txt file is 128KiB
-	 * 2) Ensure the header = the amount of data in the file
-	 * 	excluding the header and trailing 0x00 (4 bytes)
-	 * 3) Ensure all purchased content is stored in the
-	 * 	purchased_items key in this format:
-	 * 	"${GAME_PROD_ID}${CONTENT_ID}"
-	 * 	All purchased content must be seperated with comma's
-	 * 4) The latest update must be installed, this contains
-	 * 	All the actual dlc content
-	 * 5) The dlc must actually be installed. Athough it doesn't contain data,
-	 * 	the game checks if it is installed
+	 * 2) Ensure the header = the amount of data in the file excluding the header and trailing 0x00 (4 bytes).
+	 * 3) Ensure all purchased content is stored in the purchased_items key in this format: "${GAME_PROD_ID}${CONTENT_ID}". All purchased content must be seperated with commas.
+	 * 4) The latest update data title must be installed, this contains the actual DLC content.
+	 * 5) The DLC must be installed, although it doesn't contain data. The game still checks whether or not it is installed.
 	 * 
-	 * What we're doing here is just bruteforcing every content ID
-	 * from 0x00 - 0xFF because the game doesn't check for extra IDs
+	 * What we're doing here is just bruteforcing every content ID from 0x00 until 0xFF because the game doesn't check for extra IDs.
 	 **/
+
 	bool at_value = false;
 	std::string kbuf;
 	u32 ns = save_size;
@@ -321,16 +401,14 @@ Result DLC::Minecraft::PatchSingle(const DLC::PatchTitle& title)
 				// Cut every old user id.
 				for (u32 j = 0; i < save_size + 3; ++i, ++j)
 				{
-					// 0x0a = \n
-					if (buf[i + 1] == 0x0a)
+					if (buf[i + 1] == '\n')
 					{
 						ns -= j;
 						break;
 					}
 				}
 
-				// 0x3a = :
-				out_buf[wl] = 0x3a;
+				out_buf[wl] = ':';
 				for(size_t j = 0; j < newk.size(); ++j, ++wl)
 					out_buf[wl + 1] = newk[j];
 				ns += newk.size();
@@ -341,7 +419,7 @@ Result DLC::Minecraft::PatchSingle(const DLC::PatchTitle& title)
 
 			kbuf.clear();
 		}
-		else if (buf[i] == 0x0a)
+		else if (buf[i] == '\n')
 			at_value = false;
 		else if (!at_value)
 			kbuf.push_back(buf[i]);
@@ -391,10 +469,8 @@ Result DLC::Minecraft::Patch()
 		patch_titles.push_back(&DLC::Minecraft::Titles[2]);
 
 	for (const DLC::PatchTitle *&title : patch_titles)
-	{
 		if (R_FAILED(res = DLC::Minecraft::PatchSingle(*title)))
 			return res;
-	}
 
 	return 0;
 }
