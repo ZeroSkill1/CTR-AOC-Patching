@@ -244,7 +244,7 @@ AccessControlInfo:
 
 SystemControlInfo:
   SaveDataSize: 0KB # Change if the app uses savedata
-  RemasterVersion: 0
+  RemasterVersion: 1024
   StackSize: 0x40000
 
   # Modules that run services listed above should be included below
